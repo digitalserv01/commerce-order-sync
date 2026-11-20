@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:ordersync;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+
+sync:
+  commerce:
+    base-url: http://localhost:1
+    api-key: test-commerce-key
+  erp:
+    base-url: http://localhost:1
+    api-key: test-erp-key
+  initial-watermark: 2026-01-01T00:00:00Z
+  page-size: 2
+  poll-interval: PT1H
+  http-timeout: PT2S
+  scheduler:
+    enabled: false
+  retry:
+    max-attempts: 3
+    initial-backoff: PT0.01S
+    multiplier: 2.0
+    max-backoff: PT0.05S

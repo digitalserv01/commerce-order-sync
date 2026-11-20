@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: commerce-order-sync
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none   # schema is owned by Flyway
+
+sync:
+  commerce:
+    base-url: ${COMMERCE_BASE_URL}
+    api-key: ${COMMERCE_API_KEY}
+  erp:
+    base-url: ${ERP_BASE_URL}
+    api-key: ${ERP_API_KEY}
+  initial-watermark: ${SYNC_INITIAL_WATERMARK}   # e.g. 2026-01-01T00:00:00Z
+  page-size: 50
+  poll-interval: PT30S
+  http-timeout: PT10S
+  scheduler:
+    enabled: true
+  retry:
+    max-attempts: 3
+    initial-backoff: PT1S
+    multiplier: 2.0
+    max-backoff: PT10S
