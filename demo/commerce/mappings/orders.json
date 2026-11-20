@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/orders",
+    "headers": { "X-Api-Key": { "equalTo": "demo-commerce-key" } }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "page": 0,
+      "totalPages": 1,
+      "orders": [
+        {
+          "code": "ORD-1001", "version": 1, "modifiedAt": "2026-03-01T09:15:00Z", "currency": "EUR",
+          "customer": { "id": "C-501", "email": "amina@example.com", "firstName": "Amina", "lastName": "Benali" },
+          "entries": [
+            { "entryNumber": 0, "productCode": "MUG-BLUE", "productName": "Hand-painted mug", "quantity": 2, "basePrice": 14.50 },
+            { "entryNumber": 1, "productCode": "TEAPOT-01", "productName": "Ceramic teapot", "quantity": 1, "basePrice": 42.00 }
+          ],
+          "deliveryCost": 6.90, "totalPrice": 77.90,
+          "deliveryAddress": { "line1": "18 Avenue Mohammed V", "line2": null, "postalCode": "10000", "town": "Rabat", "countryIsoCode": "MA" }
+        },
+        {
+          "code": "ORD-1002", "version": 1, "modifiedAt": "2026-03-01T10:02:00Z", "currency": "EUR",
+          "customer": { "id": "C-502", "email": "luc@example.com", "firstName": "Luc", "lastName": "Martin" },
+          "entries": [
+            { "entryNumber": 0, "productCode": "PLATE-SET", "productName": "Plate set (6)", "quantity": 1, "basePrice": 60.00 }
+          ],
+          "deliveryCost": 0, "totalPrice": 66.00,
+          "deliveryAddress": { "line1": "5 Rue Victor Hugo", "line2": "Bat. B", "postalCode": "69002", "town": "Lyon", "countryIsoCode": "FR" }
+        },
+        {
+          "code": "ORD-1003", "version": 1, "modifiedAt": "2026-03-01T11:40:00Z", "currency": "EUR",
+          "customer": { "id": "C-BLOCKED", "email": "blocked@example.com", "firstName": "Test", "lastName": "Blocked" },
+          "entries": [
+            { "entryNumber": 0, "productCode": "BOWL-S", "productName": "Small bowl", "quantity": 3, "basePrice": 9.00 }
+          ],
+          "deliveryCost": 4.00, "totalPrice": 31.00,
+          "deliveryAddress": { "line1": "1 Calle Mayor", "line2": null, "postalCode": "28013", "town": "Madrid", "countryIsoCode": "ES" }
+        }
+      ]
+    }
+  }
+}

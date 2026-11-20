@@ -1,0 +1,50 @@
+# Local demo: the sync service + Postgres + two fake APIs (commerce and ERP).
+# All keys below are demo values, not secrets.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ordersync
+      POSTGRES_USER: ordersync
+      POSTGRES_PASSWORD: ordersync
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ordersync -d ordersync"]
+      interval: 2s
+      retries: 20
+
+  commerce-mock:
+    image: wiremock/wiremock:3.9.1
+    volumes:
+      - ./demo/commerce:/home/wiremock
+    ports:
+      - "8081:8080"
+
+  erp-mock:
+    image: wiremock/wiremock:3.9.1
+    command: ["--global-response-templating"]
+    volumes:
+      - ./demo/erp:/home/wiremock
+    ports:
+      - "8082:8080"
+
+  order-sync:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      commerce-mock:
+        condition: service_started
+      erp-mock:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/ordersync
+      DB_USER: ordersync
+      DB_PASSWORD: ordersync
+      COMMERCE_BASE_URL: http://commerce-mock:8080
+      COMMERCE_API_KEY: demo-commerce-key
+      ERP_BASE_URL: http://erp-mock:8080
+      ERP_API_KEY: demo-erp-key
+      ADMIN_API_KEY: demo-admin-key
+      SYNC_INITIAL_WATERMARK: "2026-01-01T00:00:00Z"
+    ports:
+      - "8080:8080"

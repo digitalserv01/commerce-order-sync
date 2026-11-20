@@ -1,0 +1,13 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/sales-orders",
+    "bodyPatterns": [ { "matchesJsonPath": "$[?(@.customerNumber == 'C-BLOCKED')]" } ]
+  },
+  "response": {
+    "status": 422,
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"error\":\"customer C-BLOCKED is on credit hold\"}"
+  }
+}

@@ -12,6 +12,8 @@ import dev.ordersync.erp.ErpSalesOrder;
 import dev.ordersync.erp.ErpUnavailableException;
 import dev.ordersync.mapping.OrderMapper;
 import dev.ordersync.mapping.OrderMappingException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.retry.support.RetryTemplate;
@@ -19,6 +21,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.NoSuchElementException;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * One sync run: read every order modified since the watermark, push each new
@@ -32,7 +36,8 @@ import java.time.Instant;
  *       If the commerce API fails mid-run, the watermark stays where the last completed page left it.</li>
  *   <li><b>No poison pill:</b> one bad order goes to the dead-letter table and the run continues.</li>
  * </ul>
- * Assumes a single running instance. Running several would need a lock around {@link #syncOnce()}.
+ * Runs never overlap inside one instance (the scheduler and a manual trigger share a lock).
+ * Running several instances would need a database lock instead.
  */
 @Service
 public class OrderSyncService {
@@ -40,6 +45,19 @@ public class OrderSyncService {
     static final String STREAM = "orders";
 
     private static final Logger log = LoggerFactory.getLogger(OrderSyncService.class);
+
+    public enum Outcome { SYNCED, SKIPPED, DEAD_LETTERED }
+
+    /** Result of replaying one dead letter. {@code newDeadLetterId} is set when the replay failed again. */
+    public record ReplayResult(String orderCode, int orderVersion, Outcome outcome, Long newDeadLetterId) {
+    }
+
+    /** Thrown when a run is requested while another one is in progress. */
+    public static class SyncAlreadyRunningException extends RuntimeException {
+        public SyncAlreadyRunningException() {
+            super("A sync run is already in progress");
+        }
+    }
 
     private final CommerceClient commerceClient;
     private final ErpClient erpClient;
@@ -51,6 +69,11 @@ public class OrderSyncService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final Instant initialWatermark;
+    private final ReentrantLock runLock = new ReentrantLock();
+
+    private final Counter syncedCounter;
+    private final Counter skippedCounter;
+    private final Counter deadLetteredCounter;
 
     public OrderSyncService(CommerceClient commerceClient,
                             ErpClient erpClient,
@@ -61,6 +84,7 @@ public class OrderSyncService {
                             DeadLetterRepository deadLetterRepository,
                             ObjectMapper objectMapper,
                             Clock clock,
+                            MeterRegistry meterRegistry,
                             SyncProperties props) {
         this.commerceClient = commerceClient;
         this.erpClient = erpClient;
@@ -72,9 +96,56 @@ public class OrderSyncService {
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.initialWatermark = props.initialWatermark();
+        this.syncedCounter = counter(meterRegistry, "synced");
+        this.skippedCounter = counter(meterRegistry, "skipped");
+        this.deadLetteredCounter = counter(meterRegistry, "dead_lettered");
+    }
+
+    private static Counter counter(MeterRegistry registry, String outcome) {
+        return Counter.builder("orders.processed")
+                .description("Orders handled by the sync, by outcome")
+                .tag("outcome", outcome)
+                .register(registry);
     }
 
     public SyncResult syncOnce() {
+        if (!runLock.tryLock()) {
+            throw new SyncAlreadyRunningException();
+        }
+        try {
+            return doSync();
+        } finally {
+            runLock.unlock();
+        }
+    }
+
+    public Instant currentWatermark() {
+        return syncStateRepository.findById(STREAM).map(SyncState::watermark).orElse(initialWatermark);
+    }
+
+    /**
+     * Re-sends a dead-lettered order (after the cause was fixed). The old dead letter is removed;
+     * if the order fails again, a fresh dead letter with the new error replaces it.
+     */
+    public ReplayResult replay(long deadLetterId) {
+        if (!runLock.tryLock()) {
+            throw new SyncAlreadyRunningException();
+        }
+        try {
+            DeadLetter deadLetter = deadLetterRepository.findById(deadLetterId)
+                    .orElseThrow(() -> new NoSuchElementException("No dead letter with id " + deadLetterId));
+            CommerceOrder order = fromJson(deadLetter.payload());
+            deadLetterRepository.delete(deadLetter);
+
+            Processed processed = process(order);
+            log.info("Replayed dead letter {} for order {}: {}", deadLetterId, idempotencyKey(order), processed.outcome());
+            return new ReplayResult(order.code(), order.version(), processed.outcome(), processed.deadLetterId());
+        } finally {
+            runLock.unlock();
+        }
+    }
+
+    private SyncResult doSync() {
         SyncState state = syncStateRepository.findById(STREAM)
                 .orElseGet(() -> new SyncState(STREAM, initialWatermark));
         // Every page of this run is read with the same 'since', so pages do not shift under us.
@@ -90,7 +161,7 @@ public class OrderSyncService {
             CommerceOrderPage result = commerceClient.fetchPage(since, page);
             for (CommerceOrder order : result.orders()) {
                 fetched++;
-                switch (process(order)) {
+                switch (process(order).outcome()) {
                     case SYNCED -> synced++;
                     case SKIPPED -> skipped++;
                     case DEAD_LETTERED -> deadLettered++;
@@ -110,9 +181,13 @@ public class OrderSyncService {
         return summary;
     }
 
-    private Outcome process(CommerceOrder order) {
+    private record Processed(Outcome outcome, Long deadLetterId) {
+    }
+
+    private Processed process(CommerceOrder order) {
         if (processedOrderRepository.existsByOrderCodeAndOrderVersion(order.code(), order.version())) {
-            return Outcome.SKIPPED;
+            skippedCounter.increment();
+            return new Processed(Outcome.SKIPPED, null);
         }
 
         ErpSalesOrder erpOrder;
@@ -132,7 +207,8 @@ public class OrderSyncService {
             });
             processedOrderRepository.save(
                     new ProcessedOrder(order.code(), order.version(), erpReference, clock.instant()));
-            return Outcome.SYNCED;
+            syncedCounter.increment();
+            return new Processed(Outcome.SYNCED, null);
         } catch (ErpRejectedException e) {
             return deadLetter(order, DeadLetter.FailureType.ERP_REJECTED, e);
         } catch (ErpUnavailableException e) {
@@ -140,11 +216,12 @@ public class OrderSyncService {
         }
     }
 
-    private Outcome deadLetter(CommerceOrder order, DeadLetter.FailureType type, RuntimeException cause) {
+    private Processed deadLetter(CommerceOrder order, DeadLetter.FailureType type, RuntimeException cause) {
         log.error("Dead-lettering order {} ({}): {}", idempotencyKey(order), type, cause.getMessage());
-        deadLetterRepository.save(new DeadLetter(
+        DeadLetter saved = deadLetterRepository.save(new DeadLetter(
                 order.code(), order.version(), type, cause.getMessage(), toJson(order), clock.instant()));
-        return Outcome.DEAD_LETTERED;
+        deadLetteredCounter.increment();
+        return new Processed(Outcome.DEAD_LETTERED, saved.id());
     }
 
     static String idempotencyKey(CommerceOrder order) {
@@ -159,5 +236,11 @@ public class OrderSyncService {
         }
     }
 
-    private enum Outcome { SYNCED, SKIPPED, DEAD_LETTERED }
+    private CommerceOrder fromJson(String payload) {
+        try {
+            return objectMapper.readValue(payload, CommerceOrder.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Stored dead-letter payload is not a valid order", e);
+        }
+    }
 }

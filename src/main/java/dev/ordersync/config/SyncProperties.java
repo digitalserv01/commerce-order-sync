@@ -20,10 +20,15 @@ public record SyncProperties(
         int pageSize,
         Instant initialWatermark,
         Duration httpTimeout,
+        Admin admin,
         Retry retry
 ) {
 
     public record Endpoint(URI baseUrl, String apiKey) {
+    }
+
+    /** Key required in the {@code X-Admin-Key} header for every {@code /admin/**} call. */
+    public record Admin(String apiKey) {
     }
 
     /** Backoff for transient ERP failures (5xx, timeouts). */

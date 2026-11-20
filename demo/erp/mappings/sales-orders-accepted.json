@@ -1,0 +1,13 @@
+{
+  "priority": 5,
+  "request": {
+    "method": "POST",
+    "urlPath": "/sales-orders",
+    "headers": { "X-Api-Key": { "equalTo": "demo-erp-key" } }
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"id\":\"SO-{{randomValue length=6 type='NUMERIC'}}\"}"
+  }
+}

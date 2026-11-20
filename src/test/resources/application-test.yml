@@ -17,6 +17,8 @@ sync:
   http-timeout: PT2S
   scheduler:
     enabled: false
+  admin:
+    api-key: test-admin-key
   retry:
     max-attempts: 3
     initial-backoff: PT0.01S
