@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/digitalserv01/commerce-order-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/digitalserv01/commerce-order-sync/actions/workflows/ci.yml)
 
+![Commerce to ERP order sync: architecture](docs/cover.png)
+
 **A Spring Boot service that moves orders from an e-commerce platform into an ERP without losing them, without duplicating them, and without one bad order blocking the rest.**
 
 Every store that runs a separate ERP needs a version of this: an order is placed online, and finance and logistics need it in the ERP. The naive version (a cron job that POSTs new orders) breaks in production:
