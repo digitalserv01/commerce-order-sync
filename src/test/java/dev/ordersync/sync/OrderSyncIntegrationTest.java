@@ -172,6 +172,23 @@ class OrderSyncIntegrationTest extends SyncTestSupport {
     }
 
     @Test
+    void deadLetteredOrderIsNotDeadLetteredAgainOnTheNextRun() {
+        // the commerce API returns the same orders again (inclusive watermark, or an API that ignores the filter)
+        commercePage(0, 1,
+                order("ORD-BAD", 1, "2026-03-01T10:00:00Z", "999.00"),
+                order("ORD-REJ", 1, "2026-03-01T11:00:00Z", "25.00"));
+        erp.stubFor(post(urlPathEqualTo("/sales-orders")).willReturn(aResponse().withStatus(422).withBody("credit hold")));
+
+        syncService.syncOnce();
+        SyncResult second = syncService.syncOnce();
+
+        assertThat(deadLetterRepository.count()).isEqualTo(2);
+        assertThat(second.skipped()).isEqualTo(2);
+        assertThat(second.deadLettered()).isZero();
+        erp.verify(1, postRequestedFor(urlPathEqualTo("/sales-orders")));
+    }
+
+    @Test
     void commerceOutageAbortsTheRunWithoutMovingTheWatermark() {
         commerce.stubFor(get(urlPathEqualTo("/orders")).willReturn(aResponse().withStatus(500)));
 

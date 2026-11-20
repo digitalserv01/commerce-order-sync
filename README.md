@@ -116,11 +116,11 @@ The sync logic only depends on two small clients, so pointing it at a real syste
 ## Tests
 
 ```bash
-mvn verify      # 27 tests, no Docker needed
+mvn verify      # 28 tests, no Docker needed
 ```
 
 - **Mapper unit tests:** totals, rounding, optional fields, and every rejection rule.
-- **Sync integration tests** (fake commerce + ERP servers, in-memory DB): happy path, duplicate polling, new order versions, ERP `409`, `503 → 503 → 201` retry, `400` rejection, ERP down after all retries, invalid data, a commerce outage, pagination, and a failure mid-pagination.
+- **Sync integration tests** (fake commerce + ERP servers, in-memory DB): happy path, duplicate polling, new order versions, ERP `409`, `503 → 503 → 201` retry, `400` rejection, ERP down after all retries, invalid data, a dead-lettered order not being parked again on later runs, a commerce outage, pagination, and a failure mid-pagination.
 - **Admin API tests:** auth, manual run, status, dead-letter listing, replay (success and failing again), metrics.
 
 ## Design notes and limits

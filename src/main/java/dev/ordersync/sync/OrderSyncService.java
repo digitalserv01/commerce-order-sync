@@ -30,7 +30,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * Guarantees:
  * <ul>
- *   <li><b>No duplicates:</b> an order version already in {@code processed_orders} is skipped, and the ERP
+ *   <li><b>No duplicates:</b> an order version already in {@code processed_orders} or {@code dead_letters} is skipped, and the ERP
  *       call carries an idempotency key for the crash window between the ERP accepting and us recording.</li>
  *   <li><b>No silent loss:</b> the watermark only moves past an order once it is synced or dead-lettered.
  *       If the commerce API fails mid-run, the watermark stays where the last completed page left it.</li>
@@ -185,7 +185,10 @@ public class OrderSyncService {
     }
 
     private Processed process(CommerceOrder order) {
-        if (processedOrderRepository.existsByOrderCodeAndOrderVersion(order.code(), order.version())) {
+        // Already handled: either synced, or parked in the dead-letter table waiting for a fix + replay.
+        // (replay() deletes the dead letter before calling this, so a replay is not skipped.)
+        if (processedOrderRepository.existsByOrderCodeAndOrderVersion(order.code(), order.version())
+                || deadLetterRepository.existsByOrderCodeAndOrderVersion(order.code(), order.version())) {
             skippedCounter.increment();
             return new Processed(Outcome.SKIPPED, null);
         }
